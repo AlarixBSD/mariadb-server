@@ -66,15 +66,25 @@ ADD_CUSTOM_COMMAND(
 )
 
 ADD_CUSTOM_COMMAND(
+  OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/sql_yacc_mariadb.yy
+  COMMAND ${CMAKE_COMMAND} "-DENABLE=MARIADB"
+   "-DIN=${CMAKE_CURRENT_SOURCE_DIR}/sql_yacc.yy"
+   "-DOUT=${CMAKE_CURRENT_BINARY_DIR}/sql_yacc_mariadb.yy"
+   -P ${CMAKE_CURRENT_SOURCE_DIR}/gen_sql_yacc_ora_yy.cmake
+  DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/sql_yacc.yy
+)
+
+ADD_CUSTOM_COMMAND(
   OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/sql_yacc_ora.yy
-  COMMAND ${CMAKE_COMMAND}
+  COMMAND ${CMAKE_COMMAND} "-DENABLE=ORACLE"
    "-DIN=${CMAKE_CURRENT_SOURCE_DIR}/sql_yacc.yy"
    "-DOUT=${CMAKE_CURRENT_BINARY_DIR}/sql_yacc_ora.yy"
    -P ${CMAKE_CURRENT_SOURCE_DIR}/gen_sql_yacc_ora_yy.cmake
   DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/sql_yacc.yy
 )
 
-ADD_CUSTOM_TARGET(gen_sql_yacc_ora_yy DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/sql_yacc_ora.yy)
+ADD_CUSTOM_TARGET(gen_mariadb_yy DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/sql_yacc_mariadb.yy)
+ADD_CUSTOM_TARGET(gen_oracle_yy DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/sql_yacc_ora.yy)
 
 ADD_DEFINITIONS(-DMYSQL_SERVER -DHAVE_EVENT_SCHEDULER)
 
@@ -350,10 +360,13 @@ IF (NOT BISON_FOUND)
       MESSAGE(FATAL_ERROR ${ERRMSG})
   ENDIF()
 ELSE()
-  BISON_TARGET(gen_sql_yacc ${CMAKE_CURRENT_SOURCE_DIR}/sql_yacc.yy ${CMAKE_CURRENT_BINARY_DIR}/sql_yacc.cc
-             COMPILE_FLAGS "-p MYSQL")
-  BISON_TARGET(gen_sql_yacc_ora ${CMAKE_CURRENT_BINARY_DIR}/sql_yacc_ora.yy ${CMAKE_CURRENT_BINARY_DIR}/sql_yacc_ora.cc
-             COMPILE_FLAGS "-p ORA")
+  BISON_TARGET(gen_mariadb_cc_hh ${CMAKE_CURRENT_BINARY_DIR}/sql_yacc_mariadb.yy
+                                 ${CMAKE_CURRENT_BINARY_DIR}/sql_yacc.cc
+                    DEFINES_FILE ${CMAKE_CURRENT_BINARY_DIR}/sql_yacc.hh
+               COMPILE_FLAGS "-p MYSQL -S ${CMAKE_CURRENT_SOURCE_DIR}/myskel.m4")
+  BISON_TARGET(gen_oracle_cc_hh ${CMAKE_CURRENT_BINARY_DIR}/sql_yacc_ora.yy
+                                ${CMAKE_CURRENT_BINARY_DIR}/sql_yacc_ora.cc
+               COMPILE_FLAGS "-p ORA -S ${CMAKE_CURRENT_SOURCE_DIR}/myskel.m4")
 ENDIF()
 
 IF(NOT CMAKE_CROSSCOMPILING OR DEFINED CMAKE_CROSSCOMPILING_EMULATOR)
@@ -377,10 +390,11 @@ ADD_CUSTOM_TARGET(
         DEPENDS
         ${CMAKE_CURRENT_BINARY_DIR}/lex_hash.h
         ${CMAKE_CURRENT_BINARY_DIR}/lex_token.h
+        ${CMAKE_CURRENT_BINARY_DIR}/sql_yacc.cc
         ${CMAKE_CURRENT_BINARY_DIR}/sql_yacc_ora.cc
 )
 
-ADD_DEPENDENCIES(GenServerSource gen_sql_yacc_ora_yy)
+ADD_DEPENDENCIES(GenServerSource gen_oracle_yy gen_mariadb_yy)
 
 IF(WIN32 OR HAVE_DLOPEN AND NOT DISABLE_SHARED)
   ADD_LIBRARY(udf_example MODULE udf_example.c udf_example.def)
