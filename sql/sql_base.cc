@@ -3148,6 +3148,7 @@ static bool auto_repair_table(THD *thd, TABLE_LIST *table_list)
 Open_table_context::Open_table_context(THD *thd, uint flags)
   :m_thd(thd),
    m_failed_table(NULL),
+   m_orig_table(NULL),
    m_start_of_statement_svp(thd->mdl_context.mdl_savepoint()),
    m_timeout(flags & MYSQL_LOCK_IGNORE_TIMEOUT ?
              LONG_TIMEOUT : thd->variables.lock_wait_timeout),
@@ -3244,6 +3245,7 @@ request_backoff_action(enum_open_table_action action_arg,
     m_failed_table->open_strategy= table->open_strategy;
     m_failed_table->mdl_request.set_type(MDL_EXCLUSIVE);
     m_failed_table->vers_skip_create= table->vers_skip_create;
+    m_orig_table= table;
   }
   m_action= action_arg;
   return FALSE;
@@ -3311,9 +3313,7 @@ Open_table_context::recover_from_failed_open()
       else
       {
         DBUG_ASSERT(!result);
-        /* The caller already done that check: */
-        DBUG_ASSERT(!open_tables_check_upgradable_mdl(
-          m_thd, m_failed_table, m_failed_table->next_global, 0));
+        DBUG_ASSERT(m_action == OT_ADD_HISTORY_PARTITION);
       }
       /*
          We are now under MDL_EXCLUSIVE mode. Other threads have no table share
@@ -3392,6 +3392,11 @@ Open_table_context::recover_from_failed_open()
           result= vers_create_partitions(m_thd, tl, vers_create_count);
           if (!m_thd->transaction->stmt.is_empty())
             trans_commit_stmt(m_thd);
+          DBUG_ASSERT(!result ||
+                      !m_thd->locked_tables_mode ||
+                      m_thd->lock->lock_count);
+          if (result)
+            goto error;
           if (!m_thd->locked_tables_mode)
           {
             /*
@@ -3399,8 +3404,43 @@ Open_table_context::recover_from_failed_open()
               does not clear thd->lock completely.
             */
             DBUG_ASSERT(m_thd->lock->lock_count == 0);
+            if (!(m_thd->lock->flags & GET_LOCK_ON_THD))
+              my_free(m_thd->lock);
             m_thd->lock= NULL;
           }
+          else if (m_thd->locked_tables_mode >= LTM_PRELOCKED)
+          {
+            MYSQL_LOCK *lock;
+            MYSQL_LOCK *merged_lock;
+
+            // FIXME: test LTM_PRELOCKED_UNDER_LOCK_TABLES
+            /*
+              In LTM_LOCK_TABLES table was reopened via locked_tables_list,
+              but not in prelocked environment where we have to reopen
+              the table manually.
+            */
+            Open_table_context ot_ctx(m_thd, MYSQL_OPEN_REOPEN);
+            if (open_table(m_thd, m_orig_table, &ot_ctx))
+            {
+              result= true;
+              goto error;
+            }
+            TABLE *table= m_orig_table->table;
+            table->reginfo.lock_type= m_thd->update_lock_default;
+            m_thd->in_lock_tables= 1;
+            lock= mysql_lock_tables(m_thd, &table, 1,
+                                    MYSQL_OPEN_REOPEN | MYSQL_LOCK_USE_MALLOC);
+            m_thd->in_lock_tables= 0;
+            m_orig_table->table= NULL;
+            if (lock == NULL ||
+                !(merged_lock= mysql_lock_merge(m_thd->lock, lock, m_thd)))
+            {
+              result= true;
+              goto error;
+            }
+            m_thd->lock= merged_lock;
+          }
+error:
           m_thd->mdl_context.rollback_to_savepoint(start_of_statement_svp());
           vers_create_count= 0;
           break;
@@ -5343,7 +5383,8 @@ TABLE *open_ltable(THD *thd, TABLE_LIST *table_list, thr_lock_type lock_type,
     DBUG_RETURN(table_list->table);
 
   /* should not be used in a prelocked_mode context, see NOTE above */
-  DBUG_ASSERT(thd->locked_tables_mode < LTM_PRELOCKED);
+  // FIXME:
+//   DBUG_ASSERT(thd->locked_tables_mode < LTM_PRELOCKED);
 
   THD_STAGE_INFO(thd, stage_opening_tables);
   thd->current_tablenr= 0;
