@@ -67,24 +67,19 @@ ADD_CUSTOM_COMMAND(
 
 ADD_CUSTOM_COMMAND(
   OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/sql_yacc_mariadb.yy
-  COMMAND ${CMAKE_COMMAND} "-DENABLE=MARIADB"
+         ${CMAKE_CURRENT_BINARY_DIR}/sql_yacc_ora.yy
+  COMMAND ${CMAKE_COMMAND} "-DVAL1=ORACLE" "-DVAL2=MARIADB"
+   "-DOUT1=${CMAKE_CURRENT_BINARY_DIR}/sql_yacc_ora.yy"
+   "-DOUT2=${CMAKE_CURRENT_BINARY_DIR}/sql_yacc_mariadb.yy"
    "-DIN=${CMAKE_CURRENT_SOURCE_DIR}/sql_yacc.yy"
-   "-DOUT=${CMAKE_CURRENT_BINARY_DIR}/sql_yacc_mariadb.yy"
-   -P ${CMAKE_CURRENT_SOURCE_DIR}/gen_sql_yacc_ora_yy.cmake
+   -P ${CMAKE_CURRENT_SOURCE_DIR}/gen_yy_files.cmake
   DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/sql_yacc.yy
+          ${CMAKE_CURRENT_SOURCE_DIR}/gen_yy_files.cmake
 )
 
-ADD_CUSTOM_COMMAND(
-  OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/sql_yacc_ora.yy
-  COMMAND ${CMAKE_COMMAND} "-DENABLE=ORACLE"
-   "-DIN=${CMAKE_CURRENT_SOURCE_DIR}/sql_yacc.yy"
-   "-DOUT=${CMAKE_CURRENT_BINARY_DIR}/sql_yacc_ora.yy"
-   -P ${CMAKE_CURRENT_SOURCE_DIR}/gen_sql_yacc_ora_yy.cmake
-  DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/sql_yacc.yy
-)
-
-ADD_CUSTOM_TARGET(gen_mariadb_yy DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/sql_yacc_mariadb.yy)
-ADD_CUSTOM_TARGET(gen_oracle_yy DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/sql_yacc_ora.yy)
+ADD_CUSTOM_TARGET(gen_yy_files
+  DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/sql_yacc_mariadb.yy
+          ${CMAKE_CURRENT_BINARY_DIR}/sql_yacc_ora.yy)
 
 ADD_DEFINITIONS(-DMYSQL_SERVER -DHAVE_EVENT_SCHEDULER)
 
@@ -394,7 +389,7 @@ ADD_CUSTOM_TARGET(
         ${CMAKE_CURRENT_BINARY_DIR}/sql_yacc_ora.cc
 )
 
-ADD_DEPENDENCIES(GenServerSource gen_oracle_yy gen_mariadb_yy)
+ADD_DEPENDENCIES(GenServerSource gen_yy_files)
 
 IF(WIN32 OR HAVE_DLOPEN AND NOT DISABLE_SHARED)
   ADD_LIBRARY(udf_example MODULE udf_example.c udf_example.def)

@@ -342,12 +342,9 @@ bool my_yyoverflow(short **a, YYSTYPE **b, size_t *yystacksize);
 
 %ifdef MARIADB
 %expect 67
-%endif MARIADB
-
-
-%ifdef ORACLE
+%else
 %expect 69
-%endif ORACLE
+%endif
 
 
 /*
@@ -1777,10 +1774,7 @@ bool my_yyoverflow(short **a, YYSTYPE **b, size_t *yystacksize);
 %type <spblock> sp_decl_variable_list
 %type <spblock> sp_decl_variable_list_anchored
 %type <kwd> reserved_keyword_udt_param_type
-%endif MARIADB
-
-
-%ifdef ORACLE
+%else
 %type <NONE> set_assign
 %type <spvar_mode> sp_opt_inout
 %type <NONE> sp_tail_standalone
